@@ -39,11 +39,11 @@ class GridDataset(Dataset):
     """res=None: clean (or random degradation if degrade=True); res=int: fixed deterministic degradation."""
 
     def __init__(self, spks, degrade=False, res=None, kd=True, max_per_spk=None, p_degrade=0.8, augment=False,
-                 labeled=None):
+                 labeled=None, codec_p=0.0):
         """labeled: speakers whose transcripts may be used (low-label runs). Their clips are oversampled so they
         make up about half of each epoch; the other speakers' clips only feed the KD losses."""
         self.spks, self.do_degrade, self.res, self.kd, self.p_degrade = list(spks), degrade, res, kd, p_degrade
-        self.augment = augment
+        self.augment, self.codec_p = augment, codec_p
         self.index, self.texts, self.is_lab = [], [], []
         per_spk = []
         for si, s in enumerate(self.spks):
@@ -86,7 +86,7 @@ class GridDataset(Dataset):
         elif self.do_degrade or self.augment:
             rng = np.random.default_rng()
             if self.do_degrade:
-                mouth = degrade(mouth, train_res(rng, self.p_degrade), rng)
+                mouth = degrade(mouth, train_res(rng, self.p_degrade), rng, self.codec_p)
             if self.augment:
                 mouth = augment(mouth, length, rng)
         item = {"mouth": mouth, "length": length, "text": self.texts[i], "key": (self.spks[si], ci),

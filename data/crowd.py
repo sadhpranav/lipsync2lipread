@@ -126,7 +126,7 @@ def _init(texts):
 
 
 def build_one(job):
-    k, spk, cid, px, distractors, seed, out_dir = job
+    k, spk, cid, px, distractors, seed, out_dir, bitrate = job
     rng = np.random.default_rng(seed)
     frames = read_frames(spk, cid)
     if len(frames) < 10:
@@ -170,7 +170,7 @@ def build_one(job):
     # render + encode
     path = os.path.join(out_dir, f"{k:04d}.mp4")
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}", "-r", "25",
-           "-i", "-", "-c:v", "libx264", "-b:v", "250k", "-pix_fmt", "yuv420p", "-an", path]
+           "-i", "-", "-c:v", "libx264", "-b:v", bitrate, "-pix_fmt", "yuv420p", "-an", path]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     face_boxes, mouth_boxes = [], []
     for t in range(T):
@@ -195,19 +195,23 @@ def main():
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--spk", nargs="+", default=TEST_SPK)
     ap.add_argument("--n_demo", type=int, default=8)
+    ap.add_argument("--distractor_spk", nargs="*", default=None, help="distractor pool (default: the other --spk)")
+    ap.add_argument("--bitrate", default="250k", help="H.264 bitrate of the 640x360 composite (low = CCTV-like)")
+    ap.add_argument("--out", default="crowd", help="output folder under WORK (the test set is WORK/crowd)")
     args = ap.parse_args()
+    root = os.path.join(WORK, args.out)
     rng = np.random.default_rng(args.seed)
-    texts = {s: proc_meta(s) for s in args.spk}
+    texts = {s: proc_meta(s) for s in set(args.spk) | set(args.distractor_spk or [])}
     spks = [s for s in args.spk if texts[s]]
     missing = sorted(set(args.spk) - set(spks))
     if missing:
         print("WARNING: not preprocessed yet, skipped:", missing)
     pool_ids = {s: sorted(i for i in texts[s] if os.path.exists(os.path.join(WORK, "raw", "videos", s, i + ".mpg")))
-                for s in spks}
-    print("speakers:", {s: len(v) for s, v in pool_ids.items()})
-    out_dir = os.path.join(WORK, "crowd", "videos")
+                for s in texts if texts[s]}
+    print("speakers:", {s: len(v) for s, v in pool_ids.items() if s in spks})
+    out_dir = os.path.join(root, "videos")
     for stale in ("videos", "loc", "demo"):  # clip ids are reused across rebuilds
-        shutil.rmtree(os.path.join(WORK, "crowd", stale), ignore_errors=True)
+        shutil.rmtree(os.path.join(root, stale), ignore_errors=True)
     os.makedirs(out_dir, exist_ok=True)
     jobs = []
     per = int(np.ceil(args.n / len(spks)))
@@ -217,19 +221,19 @@ def main():
             if k >= args.n:
                 break
             nd = int(rng.integers(2, 6))
-            others = [s for s in spks if s != spk] or [spk]
+            others = args.distractor_spk or [s for s in spks if s != spk] or [spk]
             dis = []
             for _ in range(nd):
                 ds = str(rng.choice(others))
                 dis.append((ds, str(rng.choice(pool_ids[ds]))))
-            jobs.append((k, spk, str(cid), PX_CHOICES[k % 3], dis, args.seed * 100003 + k, out_dir))
+            jobs.append((k, spk, str(cid), PX_CHOICES[k % 3], dis, args.seed * 100003 + k, out_dir, args.bitrate))
     with Pool(args.workers, initializer=_init, initargs=(texts,)) as pool:
         meta = [m for m in pool.imap(build_one, jobs, chunksize=4) if m is not None]
-    with open(os.path.join(WORK, "crowd", "meta.json"), "w") as f:
+    with open(os.path.join(root, "meta.json"), "w") as f:
         json.dump(meta, f)
     print(f"built {len(meta)} / {len(jobs)} clips")
     # demo set: a few crowd clips at each size + clean GRID test clips (muted mp4)
-    demo = os.path.join(WORK, "crowd", "demo")
+    demo = os.path.join(root, "demo")
     os.makedirs(demo, exist_ok=True)
     index = []
     for px in PX_CHOICES:

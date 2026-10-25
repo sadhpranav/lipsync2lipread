@@ -22,7 +22,8 @@ class Reader:
     """Wraps a trained student checkpoint."""
 
     def __init__(self, ckpt, device=None):
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        # is_available() can be True with no usable device (e.g. CUDA_VISIBLE_DEVICES=""), so also check the count
+        self.device = device or ("cuda" if torch.cuda.is_available() and torch.cuda.device_count() > 0 else "cpu")
         self.model, self.cfg = load_student(ckpt, self.device)
         self.ckpt = ckpt
 
@@ -67,14 +68,21 @@ def overlay_video(frames, loc, out_path=None, max_w=960):
     for t, f in enumerate(frames):
         img = cv2.resize(f, (ow, oh), interpolation=cv2.INTER_LINEAR)
         for i, tr in enumerate(loc["tracks"]):
-            b = (tr["boxes"][t] * k).astype(int)
-            col = (80, 220, 80) if i == loc["chosen"] else (200, 200, 200)
-            cv2.rectangle(img, tuple(b[:2]), tuple(b[2:]), col, 1)
+            if i != loc["chosen"]:
+                b = (tr["boxes"][t] * k).astype(int)
+                cv2.rectangle(img, tuple(b[:2]), tuple(b[2:]), (200, 200, 200), 1)
         if loc["chosen"] >= 0:
+            b = (loc["tracks"][loc["chosen"]]["boxes"][t] * k).astype(int)
+            cv2.rectangle(img, tuple(b[:2]), tuple(b[2:]), (60, 200, 60), 2)
             mb = (L.ft.mouth_box(loc["geom"][t]) * k).astype(int)
             cv2.rectangle(img, tuple(mb[:2]), tuple(mb[2:]), (40, 40, 240), 2)
-            cv2.putText(img, f"mouth {loc['mouth_px']:.0f} px", (int(mb[0]), max(12, int(mb[1]) - 6)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (40, 40, 240), 1, cv2.LINE_AA)
+            # label on a filled tag above the speaker's face box so it stays readable on any background
+            txt = f"speaker - mouth ROI {loc['mouth_px']:.0f} px"
+            (tw, th), base = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            x0 = int(np.clip(b[0], 0, max(0, ow - tw - 8)))
+            y1 = int(b[1]) - 4 if b[1] - th - base - 8 >= 0 else int(b[3]) + th + base + 8
+            cv2.rectangle(img, (x0, y1 - th - base - 4), (x0 + tw + 8, y1), (60, 200, 60), -1)
+            cv2.putText(img, txt, (x0 + 4, y1 - base - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
         proc.stdin.write(img.tobytes())
     proc.stdin.close()
     proc.wait()

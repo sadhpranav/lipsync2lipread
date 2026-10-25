@@ -39,6 +39,8 @@ def parse():
     p.add_argument("--m1", action="store_true")
     p.add_argument("--degrade", action="store_true")
     p.add_argument("--no_augment", action="store_true")
+    p.add_argument("--codec", type=float, default=0.0,
+                   help="with --degrade: probability of an H.264 round trip (low-bitrate video) instead of JPEG")
     p.add_argument("--init", default=None)
     p.add_argument("--backend", default="conformer", choices=["conformer", "bigru"])
     p.add_argument("--max_minutes", type=float, default=60)
@@ -104,7 +106,7 @@ def main():
         assert kd, "unlabeled speakers carry no loss without KD; use --train_spk <labeled> for the no-KD control"
         spks = sorted(set(spks) | set(a.labeled_spk), key=lambda s: int(s[1:]))
     train_ds = GridDataset(spks, degrade=a.degrade, kd=kd, max_per_spk=a.max_per_spk, augment=not a.no_augment,
-                           labeled=a.labeled_spk)
+                           labeled=a.labeled_spk, codec_p=a.codec)
     train_dl = DataLoader(train_ds, a.bs, shuffle=True, drop_last=True, collate_fn=collate, num_workers=a.workers,
                           worker_init_fn=worker_init, pin_memory=True, persistent_workers=a.workers > 0)
     val_sets = [load_val(a.val_spk, r, a.val_clips) for r in (None, 24)]

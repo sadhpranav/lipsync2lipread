@@ -232,18 +232,18 @@ def grammar_decode(log_probs, lengths=None, return_scores=False, beam=16, chunk=
             words = [_viterbi(l.double().numpy())[0] for l in sub]
         for l, w in zip(sub, words):
             lpn = l.double().numpy()
-            if w is None:  # infeasible: fall back to greedy + lexicon snap
-                g = lpn.argmax(1)
-                text = lexicon_snap(decode([int(c) for j, c in enumerate(g) if c != BLANK and (j == 0 or c != g[j - 1])]))
+            path = None
+            if w is not None and return_scores:
+                g = _build_graph([[t] for t in w])  # forced alignment for per-word confidence
+                _, path = _viterbi(lpn, g)
+            if w is None or (return_scores and path is None):
+                # infeasible (clip too short for a full GRID sentence): fall back to greedy + lexicon snap
+                gr = lpn.argmax(1)
+                text = lexicon_snap(decode([int(c) for j, c in enumerate(gr) if c != BLANK and (j == 0 or c != gr[j - 1])]))
                 out.append((text, [(t, 0.0) for t in text.split()]) if return_scores else text)
                 continue
             text = " ".join(w)
-            if not return_scores:
-                out.append(text)
-                continue
-            g = _build_graph([[t] for t in w])  # forced alignment for per-word confidence
-            _, path = _viterbi(lpn, g)
-            out.append((text, _word_scores(lpn, path, w, g)))
+            out.append((text, _word_scores(lpn, path, w, g)) if return_scores else text)
     return out[0] if single else out
 
 

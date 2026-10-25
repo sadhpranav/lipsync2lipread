@@ -29,7 +29,7 @@ Transfer mechanisms (flags of `distill/train.py`):
 Tested on Windows 11, Python 3.11, RTX 3070 Laptop (8 GB), CUDA 13.0.
 
 ```bash
-pip install -r requirements.txt          # torch wheels: use the CUDA index for your system
+pip install -r requirements.txt          # torch wheels: use the CUDA index for your system (PyAV: codec degradation)
 ```
 
 Large files live outside the repo in a work directory (default `../work`, override with `L2L_WORK`):
@@ -56,8 +56,10 @@ Splits (speaker-independent, LipNet's unseen-speaker test split): **test** s1, s
 
 GRID-Crowd (muted crowd composites with 16/24/32 px target mouths and 2–5 distractor faces):
 ```bash
-python -m data.crowd --n 300
+python -m data.crowd --n 300                  # test set: s1 s2 s20 s22, 640x360 H.264 at 250 kbps
+python -m data.crowd --spk s13 --distractor_spk s6 s7 s9 s10 s11 s12 --n 60 --out crowd_dev2   # dev set (val speaker)
 ```
+`--bitrate 8M --out crowd_hq` builds the same scenes at high bitrate (isolates the codec effect).
 
 ## Training
 
@@ -66,12 +68,14 @@ pwsh scripts/run_queue.ps1      # full experiment queue, resumable
 # single run, e.g. distilled fine-tune from the clean baseline:
 python distill/train.py --name R3_ft_m2m3 --init ../work/runs/R1_base_clean/best.pt --degrade --kd m2m3 --max_minutes 25 --bs 16 --accum 1
 ```
-Low-label experiment (teacher targets need audio but no transcripts, so KD can use unlabeled video):
+Follow-up experiments (`pwsh scripts/run_followup.ps1`, step budgets so results do not depend on machine load):
 ```bash
-pwsh scripts/run_lowlabel.ps1   # LL_noKD: CTC on s3-s5 only; LL_m2m3: + M2/M3 KD on all 28 training speakers
-python distill/train.py --name LL_m2m3 --labeled_spk s3 s4 s5 --kd m2m3 --degrade --max_minutes 60
+# codec-aware degradation: H.264 round trip of the small mouth clip (QP 28-35) instead of JPEG, p = 0.5
+python distill/train.py --name R9_ft_codec --init ../work/runs/R1_base_clean/best.pt --degrade --codec 0.5 --max_minutes 0 --max_steps 5416
+# low-label regime: only s3-s5 transcribed; the other speakers contribute only the KD losses (teacher targets need no text)
+python distill/train.py --name LL_m2m3 --labeled_spk s3 s4 s5 --kd m2m3 --degrade --max_minutes 0 --max_steps 12763
 ```
-With `--labeled_spk`, only those speakers' transcripts are used; their clips are oversampled to about half of each epoch, and the other speakers' clips contribute only the KD losses.
+With `--labeled_spk`, only those speakers' transcripts are used; their clips are oversampled to about half of each epoch.
 
 AdamW (lr 3e-4 scratch / 1.5e-4 fine-tune, wd 1e-2), linear warm-up then cosine decay to the wall-clock budget, fp16 AMP, grad-clip 5, batch 16. Train-time augmentation (all runs): +-4 px shift, horizontal flip, 2 time masks of <= 10 frames.
 
@@ -89,8 +93,9 @@ Metrics: WER, CER, letter- and digit-slot accuracy (the only unpredictable GRID 
 ## Interface
 
 ```bash
-python -m app.gradio_app --baseline ../work/runs/R2_ft_noKD/best.pt --distilled ../work/runs/R3_ft_m2m3/best.pt [--share]
+python -m app.gradio_app --baseline ../work/runs/R2_ft_noKD/best.pt --distilled ../work/runs/R3_ft_m2m3/best.pt [--share] [--device cpu]
 ```
+Runs on CPU too (about 0.5 s per model per 3 s clip, plus 2-3 s face tracking).
 Upload a muted video, record one with the webcam, or pick a demo crowd clip. The app detects and tracks every face, picks the active speaker by mouth motion, and shows the ROI overlay, the mouth crops the model saw (with their pixel size), baseline vs distilled transcripts with per-word confidence, and WER if a reference transcript is given. The vocabulary is the GRID grammar, e.g. "bin blue at f two now".
 
 ## Repository map

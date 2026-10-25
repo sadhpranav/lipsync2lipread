@@ -79,9 +79,15 @@ def crop_square(img, box, size):
         img = cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
         x1, y1, x2, y2 = x1 + pad, y1 + pad, x2 + pad, y2 + pad
     side_w, side_h = x2 - x1, y2 - y1
+    if side_w > size or side_h > size:
+        # warpAffine silently treats INTER_AREA as bilinear (aliasing on downscale): cut the box out at native
+        # resolution (sub-pixel exact), then area-average down like a real sensor would
+        nw, nh = max(size, int(np.ceil(side_w))), max(size, int(np.ceil(side_h)))
+        M = np.array([[nw / side_w, 0, -x1 * nw / side_w], [0, nh / side_h, -y1 * nh / side_h]], np.float32)
+        return cv2.resize(cv2.warpAffine(img, M, (nw, nh), flags=cv2.INTER_LINEAR), (size, size),
+                          interpolation=cv2.INTER_AREA)
     M = np.array([[size / side_w, 0, -x1 * size / side_w], [0, size / side_h, -y1 * size / side_h]], np.float32)
-    interp = cv2.INTER_AREA if side_w > size else cv2.INTER_LINEAR
-    return cv2.warpAffine(img, M, (size, size), flags=interp)
+    return cv2.warpAffine(img, M, (size, size), flags=cv2.INTER_LINEAR)
 
 
 def mouth_crop(bgr, geom):

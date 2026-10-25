@@ -74,3 +74,32 @@ CER clean/32/24/16: R2 7.93/9.01/10.18/13.03, R3 7.87/9.02/9.99/12.99. Letter ac
 - M3 (audio-sync KD) alone and M2+M3: no significant change vs R2.
 - **M2 (face-embedding KD) alone hurts significantly** (+3.8 pt at 16 px, CIs disjoint; letter accuracy 0.476 -> 0.360). e_face encodes the clean colour lower face (jaw, cheeks, identity), which a 16 px grey mouth crop cannot predict; regressing it competes with CTC for the frontend. Adding M3 (R3) removes the damage.
 - R8 (InfoNCE) is worse at 16 px (+1.7 pt) but its per-clip NCE loop cut throughput to 50.5 clips/s, so it got 6% fewer steps in the same 25 min; the NCE loss stayed high (1.93 nats vs log(~50) ~ 3.9 chance), i.e. the student only partly learns the sync ranking.
+
+**09:40-10:45 Interface QA, bugs found and fixed, crowd domain gap.**
+- App (`app/gradio_app.py`), tested in a headless browser at 1440x1000 and 1280x720, light and dark themes, and on edge cases. Fixed:
+  1. **crash on machines without a usable GPU.** `torch.cuda.is_available()` was True with `CUDA_VISIBLE_DEVICES=""`, so the CUDA checkpoint load failed. Now also checks `device_count()`, plus a `--device` flag.
+  2. The demo dropdown showed a clip as selected but loaded none. It now preloads the first demo and its reference text, and orders demos easy to hard.
+  3. Per-word confidence text was unreadable (grey on blue); now theme-aware.
+  4. The overlay label was unreadable. It is now a filled tag ("speaker - mouth ROI N px") above a bold box on the chosen face.
+  5. **crash on clips too short for a GRID sentence** (8 frames). The grammar forced alignment returned no path. It now falls back to greedy + lexicon snap (`eval/decode.py`); outputs for normal-length clips are unchanged.
+  6. Warning shown for clips < 2 s. Verified: no-face video, 6 s 30 fps clip (2 chunks), portrait 1080x1920, webcam-style 1280x720 VP8 .webm.
+- **`facetrack.crop_square` aliasing bug:** `cv2.warpAffine(..., INTER_AREA)` is silently bilinear (verified: identical output to INTER_LINEAR). Downscaled crops were therefore aliased. Fixed by cutting at native resolution, then `cv2.resize(INTER_AREA)` (matches resize exactly).
+  - Affected the GRID-Crowd composites (~4x downscale of the face), so the crowd test set was rebuilt with the same seed: identical scenes, sentences, distractors and boxes, only the rendering changed.
+  - Also affected the teacher face crops (~1.5x downscale; teacher targets were computed before the fix and not recomputed) and app crops of high-resolution video. Training mouth crops are upscaled and unaffected.
+  - Old crowd results are kept as `runs/R{1,2,3}/eval_crowd_aliased_v1.json`.
+- **Crowd results with the old (aliased) set:** R2 detected/oracle WER 57.4 / 55.4; R3 57.5 / 56.4. R2 oracle by size, 16/24/32 px: 66.3 / 54.7 / 45.2, against 24.7 / 20.3 / 18.6 on synthetic degradation.
+- **Diagnosis of the crowd gap (R2, oracle boxes, after the fix):**
+  - 250 kbps: 55.2% WER (16/24/32 px: 64.2 / 57.5 / 44.0).
+  - Same scenes at 8 Mbps (`crowd_hq`): **18.2%** (19.2 / 17.7 / 17.7).
+  - => the gap is the **H.264 codec at low bitrate**, not resolution, compositing or localisation. On the s13 dev crowd set, the 250 kbps mouth ROI vs 8 Mbps has PSNR ~35 dB, but frame-to-frame mouth motion is attenuated to 0.63 / 0.69 / 0.70 (range 0.51-0.82) at 16 / 24 / 32 px: P-frame smearing of small motions, which per-frame JPEG never produces.
+- **Codec-aware degradation** (`degrade.h264`, PyAV, ~10 ms/clip; `train.py --codec p`):
+  - With probability p, H.264 round-trips the small clip at QP ~ U{28..35}; otherwise JPEG as before.
+  - QP range calibrated on the s13 dev crowd set (synthetic QP 28 -> motion 0.81-0.83, QP 32 -> 0.64-0.72, QP 36 -> 0.43-0.58).
+  - Test-time degradation is bit-identical to before (checked on 44 clip/resolution pairs).
+- **Speaker selection** on test crowd: s1 0.84, s2 0.93, s20 0.77, s22 0.96; 16/24/32 px: 0.81 / 0.92 / 0.90. Dev crowd sets (s13 target): 0.98 (s13 distractors), 0.97 (training-speaker distractors). Not tuned on test.
+- **Load confound:** R2s1 got 4,761 steps in its 25 min vs 5,416 for R2, because my CPU work (crowd builds, localisation, app tests) slowed its data loading. **Remaining runs use step budgets** (`--max_minutes 0 --max_steps N`).
+- New queue `scripts/run_followup.ps1` (replaces run_lowlabel.ps1; starts after the main queue):
+  - R9_ft_codec (R2 + `--codec 0.5`, 5,416 steps);
+  - R10_ft_codec_m2m3 (R9 + KD);
+  - LL_noKD and LL_m2m3 (12,763 steps each);
+  - then crowd evaluation of all runs on the rebuilt set.

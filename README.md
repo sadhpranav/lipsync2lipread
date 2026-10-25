@@ -37,7 +37,7 @@ Transfer mechanisms (flags of `distill/train.py`):
 | LL_noKD | only 3 transcribed speakers | 40.3 | 46.2 | 63.6 |
 | LL_m2m3 | same + M2+M3 KD on 25 untranscribed speakers | 34.7 | 41.6 | 64.8 |
 
-Paired bootstrap (same clips), 16 px: KD with all 28 speakers transcribed -0.1 [-0.5, +0.3] (no effect); codec + KD -1.2 in both seeds; **low-label KD -4.6 [-5.2, -3.9] (clean -5.6)**; M2 alone +3.8; M1 init (step-matched) +8.5. A second seed alone moves 16 px WER by 0.7. Crowd failures are dominated by the 250 kbit/s H.264 stream: the same scenes at 8 Mbit/s give 18.2%. Full tables: `LOG.md`; `python -m eval.paired A B ...` reproduces the paired numbers.
+Paired bootstrap (same clips), 16 px: KD with all 28 speakers transcribed -0.1 [-0.5, +0.3] (no effect); codec + KD -1.2 in both seeds; **low-label KD -4.5 [-5.2, -3.9] (clean -5.6)**; M2 alone +3.8; M1 init (step-matched) +8.5. A second seed alone moves 16 px WER by 0.7. Crowd failures are dominated by the 250 kbit/s H.264 stream: the same scenes at 8 Mbit/s give 18.2%. Full tables: `LOG.md`; `python -m eval.paired A B ...` reproduces the paired numbers.
 
 ## Trained weights
 

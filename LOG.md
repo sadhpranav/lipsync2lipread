@@ -103,3 +103,17 @@ CER clean/32/24/16: R2 7.93/9.01/10.18/13.03, R3 7.87/9.02/9.99/12.99. Letter ac
   - R10_ft_codec_m2m3 (R9 + KD);
   - LL_noKD and LL_m2m3 (12,763 steps each);
   - then crowd evaluation of all runs on the rebuilt set.
+
+**10:51 R4 (M1, scratch, clean, 60 min) and seed reruns.** Raw WER % [95% CI], test s1 s2 s20 s22:
+
+| run | steps | clean | 32 px | 24 px | 16 px | 16 px grammar+TTA |
+|---|---|---|---|---|---|---|
+| R1 | 12,763 | 17.22 [16.74,17.75] | 33.85 | 44.06 | 62.45 | 54.58 |
+| R4 (M1) | **13,913** | 16.23 [15.78,16.72] | 35.17 | 46.44 | 65.91 | 56.21 |
+| R2 | 5,416 | 16.44 | 18.58 | 20.32 | 24.74 [24.20,25.32] | 21.38 |
+| R2s1 | 4,761 | 16.94 | 18.80 | 20.56 | 25.42 [24.86,26.02] | 22.03 |
+| R3 | 5,422 | 16.78 | 18.83 | 20.24 | 24.62 [24.05,25.22] | 21.32 |
+| R3s1 | 5,192 | 17.71 | 19.44 | 20.96 | 25.40 [24.85,25.98] | 21.73 |
+
+- **R4's clean gain is confounded:** it got 9% more steps than R1 in the same 60 min. Validation WER at equal steps interleaves; R1/R4 at 1k steps: 62.9 / 57.9; 5k: 22.6 / 19.8; 10k: 13.9 / 13.2; 12k: 13.7 / 13.8. That is a possible early-training speed-up only. Step-matched rerun R4b (12,763 steps) is queued in `scripts/run_m1_matched.ps1` after the follow-up queue.
+- **Seeds:** KD vs no-KD stays tied in both seeds (16 px: 24.7 vs 24.6; 25.4 vs 25.4). The seed-1 runs got fewer steps (load from my concurrent CPU work), which is a plausible reason they are about 0.7 pt worse.

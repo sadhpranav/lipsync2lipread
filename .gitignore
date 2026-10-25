@@ -1,0 +1,9 @@
+data_cache/
+work/
+runs/
+*.pth
+*.pt
+*.npy
+__pycache__/
+*.pyc
+.ipynb_checkpoints/

@@ -20,16 +20,19 @@ RUNS = os.path.join(WORK, "runs")
 FIG = os.path.join(WORK, "figures")
 CONDS = [("clean", "clean\n(88 px)"), ("deg32", "32 px"), ("deg24", "24 px"), ("deg16", "16 px")]
 # categorical slots in fixed order (validated palette); colour follows the run, never its rank
-ORDER = ["R1", "R2", "R3", "R5", "R6", "R8", "R4"]
-COLORS = dict(zip(ORDER, ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6"]))
+ORDER = ["R1", "R2", "R3", "R5", "R6", "R8", "R4", "R4b", "R9", "R10", "R11"]
+COLORS = dict(zip(ORDER, ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#6250d6",
+                          "#9c5b00", "#00796b", "#52514e"]))
 LABELS = {"R1": "Baseline, clean training", "R2": "Baseline + low-res aug (no KD)",
           "R3": "KD face+audio (M2+M3)", "R5": "KD audio only (M3)", "R6": "KD face only (M2)",
-          "R8": "KD M2+M3 + sync-contrastive", "R4": "M1 SyncNet stem init (clean)",
+          "R8": "KD M2+M3 + sync-contrastive", "R4": "M1 SyncNet stem init (clean, 9% more steps)",
+          "R4b": "M1 SyncNet stem init (clean, step-matched)", "R9": "Low-res + codec aug (no KD)",
+          "R10": "Low-res + codec aug + KD (M2+M3)", "R11": "R9 + simulated crowd scenes (no KD)",
           "LL_noKD": "3 labeled spk, no KD", "LL_m2m3": "3 labeled spk + KD on 25 unlabeled spk"}
 # low-label pair reuses the no-KD / KD colours so the encoding means the same thing in every figure
 COLORS.update(LL_noKD=COLORS["R2"], LL_m2m3=COLORS["R3"])
 ORDER += ["LL_noKD", "LL_m2m3"]
-BASELINES = {"R1", "R2", "LL_noKD"}
+BASELINES = {"R1", "R2", "R9", "R11", "LL_noKD"}
 OPT = {"suffix": "", "crowd": ""}  # set from CLI: eval file suffix (e.g. _grammar) and crowd decoding key suffix
 INK, INK2, GRID, SURFACE = "#0b0b0b", "#52514e", "#e6e5e0", "#fcfcfb"
 
@@ -42,7 +45,7 @@ plt.rcParams.update({
 
 
 def key(name):
-    m = re.match(r"(R\d+)", name)
+    m = re.match(r"(R\d+b?)", name)
     return m.group(1) if m else name
 
 
@@ -84,7 +87,8 @@ def save(fig, name):
     print("wrote", os.path.join(FIG, name + ".png"))
 
 
-def headline(runs, name="headline_wer_vs_resolution", title="WER vs mouth resolution, unseen test speakers"):
+def headline(runs, name="headline_wer_vs_resolution", title="WER vs mouth resolution, unseen test speakers",
+             legend="upper left"):
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     x = np.arange(len(CONDS))
     ends = []
@@ -115,7 +119,7 @@ def headline(runs, name="headline_wer_vs_resolution", title="WER vs mouth resolu
     ax.set_ylabel("word error rate, %  (lower is better)")
     ax.set_title(title, loc="left")
     ax.set_ylim(bottom=0)
-    ax.legend(loc="upper left", fontsize=8.5)
+    ax.legend(loc=legend, fontsize=8.5)
     save(fig, name)
 
 
@@ -174,7 +178,7 @@ def table(runs):
     print(md)
 
 
-def curves(runs):
+def curves(runs, name="training_curves", val="val_wer_24", val_title="Validation WER at 24 px (speaker s13)"):
     logs = {n: list(csv.DictReader(open(os.path.join(RUNS, n, "log.csv")))) for n in runs
             if os.path.exists(os.path.join(RUNS, n, "log.csv"))}
     logs = {n: r for n, r in logs.items() if r}
@@ -182,16 +186,41 @@ def curves(runs):
         return
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.6), layout="constrained")
     for n, rows in logs.items():
-        ep = [float(r["epoch"]) for r in rows]
         st = style(n)
-        axes[0].plot(ep, [float(r["ctc"]) for r in rows], label=label(n), **st)
-        v = [(float(r["epoch"]), 100 * float(r["val_wer_24"])) for r in rows if r.get("val_wer_24") not in (None, "", "nan")]
+        axes[0].plot([int(r["step"]) for r in rows], [float(r["ctc"]) for r in rows], label=label(n), **st)
+        v = [(int(r["step"]), 100 * float(r[val])) for r in rows if r.get(val) not in (None, "", "nan")]
         if v:
             axes[1].plot(*zip(*v), **st)
-    axes[0].set(title="Training CTC loss", xlabel="epoch", ylabel="CTC loss")
-    axes[1].set(title="Validation WER at 24 px (speaker s13)", xlabel="epoch", ylabel="WER, %")
+    axes[0].set(title="Training CTC loss", xlabel="optimiser step", ylabel="CTC loss")
+    axes[1].set(title=val_title, xlabel="optimiser step", ylabel="WER, %")
     axes[0].legend(fontsize=8)
-    save(fig, "training_curves")
+    save(fig, name)
+
+
+def forest(pairs, cond="deg16", seed_spread=None):
+    """Paired WER(B) - WER(A) with 95% paired-bootstrap CI for each (A, B, label); shaded band = seed-only spread."""
+    from eval.paired import load, paired
+    rows = [(lab, *paired(load(a, cond), load(b, cond))[1:4]) for a, b, lab in pairs
+            if all(os.path.exists(os.path.join(RUNS, r, f"eval_{cond}.json")) for r in (a, b))]
+    if not rows:
+        return
+    fig, ax = plt.subplots(figsize=(7.2, 0.42 * len(rows) + 1.0), layout="constrained")
+    y = np.arange(len(rows))[::-1]
+    if seed_spread:
+        ax.axvspan(-seed_spread, seed_spread, color=GRID, zorder=0, label=f"seed-only change (±{seed_spread:.2f} pt)")
+    ax.axvline(0, color=INK2, lw=1)
+    for yi, (lab, d, lo, hi) in zip(y, rows):
+        c = COLORS["R3"] if hi < 0 else (COLORS["R2"] if lo > 0 else INK2)
+        ax.errorbar(100 * d, yi, xerr=[[100 * (d - lo)], [100 * (hi - d)]], fmt="o", color=c, capsize=3, elinewidth=1.5)
+        ax.annotate(f"{100 * d:+.2f}", (100 * hi, yi), xytext=(6, 0), textcoords="offset points", va="center", fontsize=8.5)
+    ax.set_yticks(y, [r[0] for r in rows], fontsize=9)
+    ax.grid(axis="y", visible=False)
+    ax.set_xlim(right=max(100 * r[3] for r in rows) + 1.3)
+    ax.set_xlabel(f"WER change at {cond.replace('deg', '')} px, pt (B − A; < 0 = B better)")
+    ax.set_title("Paired comparisons on the same 4,000 test clips", loc="left")
+    if seed_spread:
+        ax.legend(loc="upper right", fontsize=8)
+    save(fig, f"paired_forest_{cond}")
 
 
 def teacher_sanity():
@@ -239,23 +268,27 @@ def main():
         FIG = os.path.join(FIG, "grammar")
     runs = all_runs()
     print("runs with eval:", runs)
-    head = a.runs
-    if not head:
-        head = [n for n in runs if key(n) in ("R1", "R2", "R3") and not is_seed(n)]
-        kd = [n for n in runs if key(n) in ("R5", "R6", "R8") and load_eval(n, "deg16")]
-        if kd:
-            head.append(min(kd, key=lambda n: load_eval(n, "deg16")["wer"]))
-        head += [n for n in runs if is_seed(n)]
+    head = a.runs or [n for n in runs if key(n) in ("R1", "R2", "R3", "R9", "R10") and not is_seed(n)]
     teacher_sanity()
     if runs:
         headline(head)
-        crowd_bars([n for n in head if not is_seed(n)])
+        crowd_bars([n for n in runs if key(n) in ("R1", "R2", "R3", "R9", "R10", "R11")])
         table(runs)
-        curves([n for n in runs if not is_seed(n) and n.startswith("R")])
+        curves([n for n in runs if key(n) in ("R1", "R4b")], "training_curves_m1", "val_wer_clean",
+               "Validation WER, clean (speaker s13)")
+        curves([n for n in runs if key(n) in ("R2", "R3", "R9", "R10") and not is_seed(n)], "training_curves_ft")
         low = [n for n in runs if n.startswith("LL_")]
         if low:
-            headline(low, "lowlabel_wer_vs_resolution", "Low-label regime: 3 transcribed training speakers")
-
+            headline(low, "lowlabel_wer_vs_resolution", "Low-label regime: 3 transcribed training speakers",
+                     "lower right")
+        forest([("R2_ft_noKD", "R3_ft_m2m3", "R2 → R3   M2+M3"), ("R2s1_ft_noKD", "R3s1_ft_m2m3", "R2 → R3   M2+M3, seed 2"),
+                ("R2_ft_noKD", "R5_ft_m3", "R2 → R5   M3 only"), ("R2_ft_noKD", "R6_ft_m2", "R2 → R6   M2 only"),
+                ("R2_ft_noKD", "R8_ft_m2m3nce", "R2 → R8   M2+M3+NCE"),
+                ("R9_ft_codec", "R10_ft_codec_m2m3", "R9 → R10   codec, M2+M3"),
+                ("R9s1_ft_codec", "R10s1_ft_codec_m2m3", "R9 → R10   codec, M2+M3, seed 2"),
+                ("LL_noKD", "LL_m2m3", "LL: 3 labelled spk → + KD on 25 unlabelled"),
+                ("R1_base_clean", "R4b_m1_clean_steps", "R1 → R4b   M1 init (clean training)")],
+               seed_spread=0.68)
 
 if __name__ == "__main__":
     main()

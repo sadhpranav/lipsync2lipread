@@ -13,7 +13,9 @@ import gradio as gr
 from app import infer
 from data.crowd import WORK
 
-DEMO_DIR = os.path.join(WORK, "crowd", "demo")
+# demo clips built by data/crowd.py; a copy ships in app/demo (GRID clips, CC BY 4.0) for fresh clones
+DEMO_DIR = next((d for d in (os.path.join(WORK, "crowd", "demo"), os.path.join(os.path.dirname(__file__), "demo"))
+                 if os.path.exists(os.path.join(d, "index.json"))), "")
 NOTE = ("**Vocabulary = GRID grammar** (command · colour · preposition · letter · digit · adverb), e.g. "
         "*\"bin blue at f two now\"*, *\"place red by d three again\"*. The model reads lips only — audio is ignored. "
         "Clips are resampled to 25 fps; the first 9 s are used and read in 3 s chunks.")
@@ -40,8 +42,7 @@ def chips(words):
 
 
 def load_demos():
-    p = os.path.join(DEMO_DIR, "index.json")
-    return json.load(open(p)) if os.path.exists(p) else []
+    return json.load(open(os.path.join(DEMO_DIR, "index.json"))) if DEMO_DIR else []
 
 
 def build(readers):
@@ -125,7 +126,7 @@ def main():
     if a.distilled:
         readers["distilled"] = infer.Reader(a.distilled, a.device)
     assert readers, "pass --baseline and/or --distilled"
-    build(readers).launch(share=a.share, server_port=a.port, css=CSS, allowed_paths=[DEMO_DIR])
+    build(readers).launch(share=a.share, server_port=a.port, css=CSS, allowed_paths=[DEMO_DIR] if DEMO_DIR else [])
 
 
 if __name__ == "__main__":

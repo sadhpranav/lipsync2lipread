@@ -150,3 +150,22 @@ CER clean/32/24/16: R2 7.93/9.01/10.18/13.03, R3 7.87/9.02/9.99/12.99. Letter ac
 - **Pairing captures clip-sampling noise only, not training noise.** The seed-only row (R2 -> R2s1) already moves 16 px WER by +0.68 pt (p = 0.001), part of which is R2s1's 12% fewer steps. So effects under about 1 pt are within run-to-run variation.
 - The only KD improvement beyond that is **R9 -> R10: -1.19 pt at 16 px** (-0.6 at 24/32 px), with the codec degradation. It is single-seed and about 1.7x the seed spread, so it is suggestive.
 - Second seed queued: R9s1 / R10s1 appended to `scripts/run_final.ps1` after R4b.
+
+**15:50 Low-label pair, R11, crowd evaluation of all runs (logged from the run outputs; paired bootstrap as above).**
+- LL_noKD (CTC on s3-s5 only) vs LL_m2m3 (same + M2+M3 KD on all 28 speakers, the other 25 untranscribed), 12,763 steps each, raw WER %:
+  - clean 40.30 -> 34.67, 32 px 41.37 -> 36.20, 24 px 42.49 -> 37.40, 16 px 46.18 -> 41.63.
+  - Paired: clean -5.64 [-6.24,-5.03], 32 px -5.17, 24 px -5.10, 16 px -4.55 [-5.19,-3.92]. About 7x the seed spread (0.68): **KD clearly helps when transcripts are scarce.**
+  - Crowd (oracle, 250 kbps) is poor for both: 63.6 vs 64.8.
+- R11_ft_crowdsim (R9 recipe + 8,400 training-speaker crowd scenes, 5,416 steps): crowd oracle 50.2 (grammar 43.5), detected 55.6 (grammar 49.0); best crowd model so far. Synthetic WER is worse: clean 21.78, 16 px 31.16.
+- Crowd localisation on the rebuilt test set: face recall 0.9998, speaker selection 88.7% (16/24/32 px: 86/89/91%).
+- Slides: `E:\College\IE_Project\slides` (`collect.py` reads every number from the run outputs, `build.js` writes the deck).
+
+**18:01 Final queue finished; 19:30 crowd evaluation of R4b, R9s1, R10s1.** Raw WER %, test s1 s2 s20 s22; paired bootstrap as above.
+- **R4b_m1_clean_steps (M1, exactly R1's 12,763 steps):** clean 18.15, 32 px 40.23, 24 px 52.02, 16 px 70.92; crowd oracle 71.4.
+  - Paired vs R1: clean +0.92 [+0.55,+1.33], 16 px +8.46 [+7.87,+9.07]. **M1 hurts once steps are matched**; R4's clean gain was the 9% extra steps.
+  - Validation WER (s13, clean) R1 / R4b: 1k 62.9 / 56.3, 3k 32.9 / 29.4, 6k 17.6 / 23.6, final 13.7 / 14.6. Head start only.
+- **Codec pair, seed 2:** R9s1 clean 18.57, 16 px 27.20; R10s1 clean 17.84, 16 px 25.99.
+  - Paired R9s1 -> R10s1: clean -0.73*, 32 px -0.31, 24 px -0.61*, **16 px -1.20 [-1.65,-0.75]***. Replicates R9 -> R10 (-1.19).
+  - Crowd oracle: R9s1 53.8, R10s1 51.3 (seed 1: R9 51.8, R10 52.6). KD on crowd is within noise (+0.8 / -2.5 on 300 clips).
+- Figures regenerated (`eval/figures.py`: new run labels, `key()` keeps R4b separate from R4, M1 and fine-tune curves vs step, paired forest plot at 16 px). Qualitative crowd panel: `eval.qualitative --baseline R9s1_ft_codec --distilled R10s1_ft_codec_m2m3 --decode grammar`.
+- **Interface check with the final pair (R9s1 baseline, R10s1 distilled):** all 8 demo clips localised; distilled WER <= baseline WER on all 8 (grammar decoding); 16 px demo in the browser: 6 faces tracked, 15 px ROI, no console errors. Demo clips now also ship in `app/demo/` for fresh clones.

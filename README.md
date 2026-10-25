@@ -24,6 +24,29 @@ Transfer mechanisms (flags of `distill/train.py`):
 | NCE | sync-contrastive KD: the student's window must pick its own audio embedding among the clip's other windows (InfoNCE, tau 0.1) | `--kd m2m3nce` |
 | M4 | cross-resolution: student input degraded (16/24/32 px, blur, JPEG, jitter), teacher targets always from clean frames | `--degrade` |
 
+## Results (test speakers s1, s2, s20, s22; 4,000 clips; raw greedy WER %)
+
+| run | what | clean | 16 px | GRID-Crowd (GT boxes) |
+|---|---|---|---|---|
+| R1 | clean training, from scratch | 17.2 | 62.5 | 66.1 |
+| R2 | R1 fine-tuned on degraded video, no KD | 16.4 | 24.7 | 55.2 |
+| R3 | R2 + M2+M3 KD | 16.8 | 24.6 | 56.0 |
+| R9 / R9s1 | degraded + H.264 codec, no KD (2 seeds) | 18.2 / 18.6 | 27.3 / 27.2 | 51.8 / 53.8 |
+| R10 / R10s1 | R9 + M2+M3 KD (2 seeds) | 18.3 / 17.8 | 26.1 / 26.0 | 52.6 / 51.3 |
+| R11 | R9 + simulated crowd scenes from training speakers | 21.8 | 31.2 | 50.2 |
+| LL_noKD | only 3 transcribed speakers | 40.3 | 46.2 | 63.6 |
+| LL_m2m3 | same + M2+M3 KD on 25 untranscribed speakers | 34.7 | 41.6 | 64.8 |
+
+Paired bootstrap (same clips), 16 px: KD with all 28 speakers transcribed -0.1 [-0.5, +0.3] (no effect); codec + KD -1.2 in both seeds; **low-label KD -4.6 [-5.2, -3.9] (clean -5.6)**; M2 alone +3.8; M1 init (step-matched) +8.5. A second seed alone moves 16 px WER by 0.7. Crowd failures are dominated by the 250 kbit/s H.264 stream: the same scenes at 8 Mbit/s give 18.2%. Full tables: `LOG.md`; `python -m eval.paired A B ...` reproduces the paired numbers.
+
+## Trained weights
+
+All checkpoints (73.5 MB each, model weights + config) are attached to the GitHub release `v1.0`:
+```bash
+gh release download v1.0 -R sadhpranav/lipsync2lipread -D ../work/release
+```
+Each file `<run>.pt` is the `best.pt` of that run (selected by validation WER on s13). The interface uses `R9s1_ft_codec.pt` (baseline) and `R10s1_ft_codec_m2m3.pt` (distilled).
+
 ## Setup
 
 Tested on Windows 11, Python 3.11, RTX 3070 Laptop (8 GB), CUDA 13.0.
@@ -77,7 +100,7 @@ python distill/train.py --name LL_m2m3 --labeled_spk s3 s4 s5 --kd m2m3 --degrad
 ```
 With `--labeled_spk`, only those speakers' transcripts are used; their clips are oversampled to about half of each epoch.
 
-AdamW (lr 3e-4 scratch / 1.5e-4 fine-tune, wd 1e-2), linear warm-up then cosine decay to the wall-clock budget, fp16 AMP, grad-clip 5, batch 16. Train-time augmentation (all runs): +-4 px shift, horizontal flip, 2 time masks of <= 10 frames.
+AdamW (lr 3e-4 scratch / 1.5e-4 fine-tune, wd 1e-2), linear warm-up then cosine decay to the end of the budget (wall-clock for the first runs, fixed step counts from R9 on), fp16 AMP, grad-clip 5, batch 16. Train-time augmentation (all runs): +-4 px shift, horizontal flip, 2 time masks of <= 10 frames.
 
 ## Evaluation
 
@@ -85,7 +108,8 @@ AdamW (lr 3e-4 scratch / 1.5e-4 fine-tune, wd 1e-2), linear warm-up then cosine 
 python eval/evaluate.py --ckpt ../work/runs/R3_ft_m2m3/best.pt          # clean, 32/24/16 px; raw + grammar/TTA
 python -m eval.eval_crowd --ckpt ../work/runs/R2_ft_noKD/best.pt ../work/runs/R3_ft_m2m3/best.pt
 python -m eval.figures && python -m eval.figures --decode grammar
-python -m eval.qualitative --baseline R2_ft_noKD --distilled R3_ft_m2m3
+python -m eval.qualitative --baseline R9s1_ft_codec --distilled R10s1_ft_codec_m2m3 --decode grammar
+python -m eval.paired R9_ft_codec R10_ft_codec_m2m3 LL_noKD LL_m2m3                  # paired bootstrap
 python -m teacher.sanity_sweep --spk s1 s2 s20 s22                       # teacher transfer check
 ```
 Metrics: WER, CER, letter- and digit-slot accuracy (the only unpredictable GRID slots), 95% bootstrap CIs, and a sync score (cosine between the student's `h_audio` and the teacher's audio embedding). Two decoders are always reported: **raw** greedy CTC, and **grammar+TTA** (GRID-grammar-constrained CTC beam search over the 6 word slots, with horizontal-flip test-time averaging). Model selection uses raw greedy WER only.
@@ -93,7 +117,7 @@ Metrics: WER, CER, letter- and digit-slot accuracy (the only unpredictable GRID 
 ## Interface
 
 ```bash
-python -m app.gradio_app --baseline ../work/runs/R2_ft_noKD/best.pt --distilled ../work/runs/R3_ft_m2m3/best.pt [--share] [--device cpu]
+python -m app.gradio_app --baseline ../work/release/R9s1_ft_codec.pt --distilled ../work/release/R10s1_ft_codec_m2m3.pt [--share] [--device cpu]
 ```
 Runs on CPU too (about 0.5 s per model per 3 s clip, plus 2-3 s face tracking).
 Upload a muted video, record one with the webcam, or pick a demo crowd clip. The app detects and tracks every face, picks the active speaker by mouth motion, and shows the ROI overlay, the mouth crops the model saw (with their pixel size), baseline vs distilled transcripts with per-word confidence, and WER if a reference transcript is given. The vocabulary is the GRID grammar, e.g. "bin blue at f two now".

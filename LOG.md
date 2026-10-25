@@ -128,3 +128,25 @@ CER clean/32/24/16: R2 7.93/9.01/10.18/13.03, R3 7.87/9.02/9.99/12.99. Letter ac
 - Crowd composites from the 28 training speakers only: `data.crowd --spk <train> --n 8400 --out crowd_train --seed 7`, 250 kbps. Ground-truth-box crops via the new `data/crowd_crops.py`.
 - `train.py --crowd_train crowd_train --crowd_rep 2` mixes them in (KD off). It asserts that no val/test speaker is present; checked that it rejects the s13 dev set.
 - Same generator as the test set but disjoint speakers, scenes and seed, so it is reported as an upper bound for matched simulation.
+
+**12:25 R10_ft_codec_m2m3 (R9 + M2+M3 KD, 5,416 steps).**
+- Raw WER %: clean 18.31, 32 px 19.98, 24 px 21.51, 16 px 26.15 [25.60,26.76]; grammar+TTA at 16 px 22.55; sync 0.67.
+- Crowd, oracle boxes: 52.6 raw / 48.2 grammar (R9: 51.8 / 47.2).
+
+**12:35 Paired bootstrap (`eval/paired.py`, same 4,000 clips, 2,000 resamples): WER(B) - WER(A), raw greedy, pt.** Full table: `work/figures/paired.md`.
+
+| A -> B | clean | 32 px | 24 px | 16 px [95% CI] |
+|---|---|---|---|---|
+| R2 -> R3 (M2+M3) | +0.34* | +0.25 | -0.09 | -0.12 [-0.51,+0.27] |
+| R2s1 -> R3s1 | +0.77* | +0.64* | +0.40* | -0.03 [-0.43,+0.39] |
+| R2 -> R5 (M3) | +0.55* | +0.16 | +0.40* | +0.21 [-0.18,+0.57] |
+| R2 -> R6 (M2) | +3.28* | +3.17* | +3.17* | **+3.80** [+3.35,+4.26]* |
+| R2 -> R8 (NCE) | +0.41* | +0.55* | +0.58* | +1.73 [+1.29,+2.12]* |
+| R9 -> R10 (codec, M2+M3) | +0.16 | **-0.57*** | **-0.59*** | **-1.19** [-1.60,-0.81]* |
+| R1 -> R4 (M1, 9% more steps) | -0.99* | +1.31* | +2.38* | +3.45* |
+| R2 -> R2s1 (seed only) | +0.50* | +0.22 | +0.23 | +0.68 [+0.32,+1.06]* |
+
+(* = paired 95% CI excludes 0.)
+- **Pairing captures clip-sampling noise only, not training noise.** The seed-only row (R2 -> R2s1) already moves 16 px WER by +0.68 pt (p = 0.001), part of which is R2s1's 12% fewer steps. So effects under about 1 pt are within run-to-run variation.
+- The only KD improvement beyond that is **R9 -> R10: -1.19 pt at 16 px** (-0.6 at 24/32 px), with the codec degradation. It is single-seed and about 1.7x the seed spread, so it is suggestive.
+- Second seed queued: R9s1 / R10s1 appended to `scripts/run_final.ps1` after R4b.

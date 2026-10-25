@@ -60,3 +60,17 @@ CER clean/32/24/16: R2 7.93/9.01/10.18/13.03, R3 7.87/9.02/9.99/12.99. Letter ac
 - Hypothesis: with 28k transcribed clips CTC already supplies the information the teacher offers. KD needs no transcripts, so it should matter when labels are scarce -> added low-label experiment (below).
 
 **06:35 Low-label experiment added (`scripts/run_lowlabel.ps1`, starts after the main queue).** New flag `train.py --labeled_spk`: only s3, s4, s5 (3,000 clips) keep transcripts; their clips are oversampled to ~50% of each epoch (24,000 of 48,878 samples) and the other 25 speakers contribute only the KD losses (per-clip CTC weight 0; with all weights 1 the loss equals the old mean exactly, checked). LL_noKD = CTC on s3-s5 only; LL_m2m3 = same + M2+M3 KD on all 28 speakers. Both from scratch, degraded, 60 min. Note the KD run gets ~half as many labeled samples per minute (conservative for KD).
+
+**08:20 KD ablations (fine-tuned from R1 with degradation, 25 min, same schedule as R2/R3).** Raw greedy WER % [95% CI], test s1 s2 s20 s22:
+
+| run | KD | clean | 32 px | 24 px | 16 px | 16 px grammar+TTA | 16 px letter / digit | sync | steps | clips/s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| R2 | none | 16.44 | 18.58 | 20.32 | 24.74 [24.20,25.32] | 21.38 | 0.476 / 0.737 | 0.011 | 5416 | 58.9 |
+| R3 | M2+M3 | 16.78 | 18.83 | 20.24 | 24.62 [24.05,25.22] | 21.32 | 0.478 / 0.731 | 0.669 | 5422 | 58.9 |
+| R5 | M3 | 16.99 | 18.74 | 20.72 | 24.95 [24.38,25.50] | 21.36 | 0.463 / 0.743 | 0.669 | 5340 | 58.5 |
+| R6 | M2 | 19.72 | 21.75 | 23.50 | 28.55 [27.98,29.16] | 24.61 | 0.360 / 0.740 | -0.002 | 5494 | 58.5 |
+| R8 | M2+M3+NCE | 16.85 | 19.13 | 20.91 | 26.47 [25.86,27.04] | 22.29 | 0.471 / 0.709 | 0.665 | 5084 | 50.5 |
+
+- M3 (audio-sync KD) alone and M2+M3: no significant change vs R2.
+- **M2 (face-embedding KD) alone hurts significantly** (+3.8 pt at 16 px, CIs disjoint; letter accuracy 0.476 -> 0.360). e_face encodes the clean colour lower face (jaw, cheeks, identity), which a 16 px grey mouth crop cannot predict; regressing it competes with CTC for the frontend. Adding M3 (R3) removes the damage.
+- R8 (InfoNCE) is worse at 16 px (+1.7 pt) but its per-clip NCE loop cut throughput to 50.5 clips/s, so it got 6% fewer steps in the same 25 min; the NCE loss stayed high (1.93 nats vs log(~50) ~ 3.9 chance), i.e. the student only partly learns the sync ranking.

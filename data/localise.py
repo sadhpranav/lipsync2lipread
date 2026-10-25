@@ -63,7 +63,7 @@ class FaceDetector:
         v = mp.tasks.vision
         path = os.path.join(ft.CKPT_DIR, "blaze_face_full_range.tflite")
         if not os.path.exists(path):
-            path = os.path.join(ft.CKPT_DIR, "blaze_face_short_range.tflite")
+            path = ft.ckpt_path("blaze_face_short_range.tflite")
         self._mp = mp
         self.det = v.FaceDetector.create_from_options(v.FaceDetectorOptions(
             base_options=mp.tasks.BaseOptions(model_asset_path=path),

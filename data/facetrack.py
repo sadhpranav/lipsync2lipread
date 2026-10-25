@@ -7,7 +7,19 @@ import os
 import cv2
 import numpy as np
 
-CKPT_DIR = os.environ.get("L2L_CKPT", os.path.join(os.path.dirname(__file__), "..", "..", "work", "ckpt"))
+CKPT_DIR = os.environ.get("L2L_CKPT", os.path.join(
+    os.environ.get("L2L_WORK", os.path.join(os.path.dirname(__file__), "..", "..", "work")), "ckpt"))
+
+
+def ckpt_path(name):
+    """Path of a model file in CKPT_DIR, with a pointer to the download script if it is missing."""
+    p = os.path.join(CKPT_DIR, name)
+    if not os.path.exists(p):
+        raise FileNotFoundError(f"{name} not found in {os.path.abspath(CKPT_DIR)}; run scripts/get_models.sh "
+                                "(or set L2L_WORK / L2L_CKPT)")
+    return p
+
+
 MOUTH_SIZE = 88          # student input side
 MOUTH_SCALE = 1.8        # ROI side = MOUTH_SCALE * mouth-corner distance
 FACE_SIZE = 96           # teacher input side (lower half used -> 48 x 96)
@@ -23,7 +35,7 @@ class Landmarker:
         import mediapipe as mp
         v = mp.tasks.vision
         opts = v.FaceLandmarkerOptions(
-            base_options=mp.tasks.BaseOptions(model_asset_path=os.path.join(CKPT_DIR, "face_landmarker.task")),
+            base_options=mp.tasks.BaseOptions(model_asset_path=ckpt_path("face_landmarker.task")),
             running_mode=v.RunningMode.IMAGE, num_faces=num_faces,
             min_face_detection_confidence=min_conf, min_face_presence_confidence=min_conf)
         self._mp = mp

@@ -7,7 +7,8 @@ import torch.nn.functional as F
 from third_party.wav2lip.syncnet import SyncNet_color
 from third_party.wav2lip import audio as w2l_audio
 
-CKPT = os.path.join(os.path.dirname(__file__), "..", "..", "work", "ckpt", "lipsync_expert.pth")
+CKPT = os.path.join(os.environ.get("L2L_WORK", os.path.join(os.path.dirname(__file__), "..", "..", "work")), "ckpt",
+                    "lipsync_expert.pth")
 WIN = 5          # video frames per window (0.2 s)
 MEL_STEP = 16    # mel columns per window
 FPS = 25

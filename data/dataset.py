@@ -97,6 +97,33 @@ class GridDataset(Dataset):
         return item
 
 
+class CrowdCrops(Dataset):
+    """Ground-truth-box mouth crops of composited low-bitrate crowd clips (data/crowd_crops.py), already degraded
+    by the real rendering + H.264 pipeline, so only the standard train-time augmentation is applied."""
+
+    def __init__(self, root, augment=True):
+        self.root, self.augment = root, augment
+        info = json.load(open(os.path.join(root, "crops.json")))
+        self.texts, self.nframes, self.spk = info["texts"], info["nframes"], info["spk"]
+        self._arr = None
+
+    def __getstate__(self):
+        d = self.__dict__.copy()
+        d["_arr"] = None
+        return d
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, i):
+        if self._arr is None:
+            self._arr = np.load(os.path.join(self.root, "crops.npy"), mmap_mode="r")
+        mouth, length = np.array(self._arr[i]), int(self.nframes[i])
+        if self.augment:
+            mouth = augment(mouth, length, np.random.default_rng())
+        return {"mouth": mouth, "length": length, "text": self.texts[i], "key": ("crowd", i), "labeled": True}
+
+
 def collate(batch):
     out = {
         "mouth": torch.from_numpy(np.stack([b["mouth"] for b in batch])),

@@ -117,3 +117,14 @@ CER clean/32/24/16: R2 7.93/9.01/10.18/13.03, R3 7.87/9.02/9.99/12.99. Letter ac
 
 - **R4's clean gain is confounded:** it got 9% more steps than R1 in the same 60 min. Validation WER at equal steps interleaves; R1/R4 at 1k steps: 62.9 / 57.9; 5k: 22.6 / 19.8; 10k: 13.9 / 13.2; 12k: 13.7 / 13.8. That is a possible early-training speed-up only. Step-matched rerun R4b (12,763 steps) is queued in `scripts/run_m1_matched.ps1` after the follow-up queue.
 - **Seeds:** KD vs no-KD stays tied in both seeds (16 px: 24.7 vs 24.6; 25.4 vs 25.4). The seed-1 runs got fewer steps (load from my concurrent CPU work), which is a plausible reason they are about 0.7 pt worse.
+
+**11:29 R9_ft_codec (R2 + `--codec 0.5`, 5,416 steps).**
+- Synthetic test, raw WER %: clean 18.15, 32 px 20.55, 24 px 22.10, 16 px 27.34 [26.77,27.93]; grammar+TTA at 16 px 23.23.
+- It is worse than R2 on the JPEG-only synthetic conditions, as expected: half its degraded clips use H.264 instead of JPEG.
+- **Crowd (oracle boxes, 250 kbps): 51.8% raw / 47.2% grammar** (16/24/32 px raw: 60.5 / 52.0 / 42.8), against R2 55.2 / 50.8.
+- Only partial recovery. At 16-32 px the mouth occupies 1-4 macroblocks of the full 640x360 frame, which the rate control often codes as skip (frozen, then jumping). Simulating the codec on the isolated small clip does not reproduce that.
+
+**11:40 Matched-simulation run R11 queued (`scripts/run_final.ps1`, replaces run_m1_matched.ps1; starts after the follow-up queue, then R4b).**
+- Crowd composites from the 28 training speakers only: `data.crowd --spk <train> --n 8400 --out crowd_train --seed 7`, 250 kbps. Ground-truth-box crops via the new `data/crowd_crops.py`.
+- `train.py --crowd_train crowd_train --crowd_rep 2` mixes them in (KD off). It asserts that no val/test speaker is present; checked that it rejects the s13 dev set.
+- Same generator as the test set but disjoint speakers, scenes and seed, so it is reported as an upper bound for matched simulation.

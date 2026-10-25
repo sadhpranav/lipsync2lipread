@@ -20,10 +20,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 
-from data.dataset import GridDataset, collate, to_input, worker_init
-from data.splits import VAL, VAL_CLIPS, available_train, work_dir
+from data.dataset import CrowdCrops, GridDataset, collate, to_input, worker_init
+from data.splits import TEST, VAL, VAL_CLIPS, available_train, work_dir
 from distill.losses import cos_kd, ctc_loss, info_nce, window_mask
 from eval.metrics import ctc_greedy, wer
 from student.model import LipReader, init_stem_from_syncnet, load_student, save_ckpt
@@ -58,6 +58,9 @@ def parse():
     p.add_argument("--lambda_nce", type=float, default=0.1)
     p.add_argument("--train_spk", nargs="*", default=None)
     p.add_argument("--max_per_spk", type=int, default=None)
+    p.add_argument("--crowd_train", default=None,
+                   help="folder under WORK with crops.npy from data/crowd_crops.py (training speakers only), mixed in")
+    p.add_argument("--crowd_rep", type=int, default=1, help="how many times the crowd clips are repeated per epoch")
     p.add_argument("--labeled_spk", nargs="*", default=None,
                    help="low-label runs: only these speakers' transcripts are used; the rest feed KD only")
     p.add_argument("--val_spk", nargs="*", default=VAL)
@@ -107,6 +110,14 @@ def main():
         spks = sorted(set(spks) | set(a.labeled_spk), key=lambda s: int(s[1:]))
     train_ds = GridDataset(spks, degrade=a.degrade, kd=kd, max_per_spk=a.max_per_spk, augment=not a.no_augment,
                            labeled=a.labeled_spk, codec_p=a.codec)
+    if a.crowd_train:
+        assert not kd, "crowd clips carry no teacher targets; use --kd none with --crowd_train"
+        crowd = CrowdCrops(os.path.join(work_dir(), a.crowd_train), augment=not a.no_augment)
+        leak = sorted(set(crowd.spk) & set(VAL + TEST))
+        assert not leak, f"crowd training clips include val/test speakers {leak}"
+        train_ds = ConcatDataset([train_ds] + [crowd] * a.crowd_rep)
+        print(f"mixing {len(crowd)} x {a.crowd_rep} crowd clips into {len(train_ds) - len(crowd) * a.crowd_rep} GRID clips",
+              flush=True)
     train_dl = DataLoader(train_ds, a.bs, shuffle=True, drop_last=True, collate_fn=collate, num_workers=a.workers,
                           worker_init_fn=worker_init, pin_memory=True, persistent_workers=a.workers > 0)
     val_sets = [load_val(a.val_spk, r, a.val_clips) for r in (None, 24)]
@@ -123,7 +134,7 @@ def main():
     total = a.max_steps or a.epochs * (len(train_dl) // a.accum)
     warmup = a.warmup if a.warmup is not None else (200 if finetune else 1000)
     cfg = {**model.cfg, **vars(a), "lr": lr, "warmup": warmup, "train_spk": spks, "n_train": len(train_ds),
-           "n_labeled": int(sum(train_ds.is_lab))}
+           "n_labeled": len(train_ds) if a.crowd_train else int(sum(train_ds.is_lab))}
     with open(os.path.join(run, "config.json"), "w") as f:
         json.dump(cfg, f, indent=1)
 
